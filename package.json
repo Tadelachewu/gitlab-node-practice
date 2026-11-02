@@ -1,0 +1,12 @@
+{
+  "name": "gitlab-node-practice",
+  "version": "1.0.0",
+  "description": "Small Node.js app for practicing GitLab CI/CD with a local runner",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "build": "node scripts/build.js"
+  }
+}

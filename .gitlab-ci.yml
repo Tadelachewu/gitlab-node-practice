@@ -1,0 +1,39 @@
+stages:
+  - test
+  - build
+  - deploy
+
+# Every job must carry this tag, because the runner does not accept untagged jobs.
+default:
+  tags:
+    - local-windows
+
+test:
+  stage: test
+  script:
+    - node --version
+    - npm ci
+    - npm test
+
+build:
+  stage: build
+  script:
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+# Only deploys from the default branch. Other branches stop after build.
+deploy:
+  stage: deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - $target = Join-Path $env:USERPROFILE "deployments\gitlab-node-practice"
+    - if (Test-Path $target) { Remove-Item $target -Recurse -Force }
+    - New-Item -ItemType Directory -Path $target | Out-Null
+    - Copy-Item dist\* $target -Recurse
+    - Write-Output "Deployed to $target"
+    - Get-Content (Join-Path $target "build-info.json")
