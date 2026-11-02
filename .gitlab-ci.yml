@@ -34,9 +34,4 @@ deploy:
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   script:
-    - $target = Join-Path $env:USERPROFILE "deployments\gitlab-node-practice"
-    - if (Test-Path $target) { Remove-Item $target -Recurse -Force }
-    - New-Item -ItemType Directory -Path $target | Out-Null
-    - Copy-Item dist\* $target -Recurse
-    - Write-Output "Deployed to $target"
-    - Get-Content (Join-Path $target "build-info.json")
+    - .\scripts\deploy.ps1

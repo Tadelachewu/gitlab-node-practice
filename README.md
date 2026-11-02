@@ -56,6 +56,8 @@ The app can only email people in its contact list, but it has no login, so anyon
 | `src/lib/email.mjs` | Email validation, SMTP settings, and message building |
 | `test/` | Tests for the code in `src/lib/` |
 | `scripts/build.js` | Assembles `dist/` and writes `build-info.json` |
+| `scripts/deploy.ps1` | Replaces the deployed app, starts it, and checks that it is running |
+| `scripts/start-server.ps1` | Loads the email settings and runs the deployed app |
 | `.gitlab-ci.yml` | Defines the pipeline |
 
 ## How CI/CD works
@@ -78,7 +80,7 @@ The stages run in order, and if one fails, the later stages don't run.
 
 1. **`test`** installs dependencies with `npm ci` and runs `npm test`.
 2. **`build`** runs `npm run build` to create `dist/`, then saves it as an artifact for one week.
-3. **`deploy`** replaces the deployment folder with the contents of `dist/`.
+3. **`deploy`** stops the running app, replaces the deployment folder with the contents of `dist/`, and starts the new version. The job fails unless the new commit is serving within 30 seconds.
 
 ### Runner requirements
 
@@ -102,25 +104,37 @@ The app is deployed to this folder on the machine running the runner, under the 
 %USERPROFILE%\deployments\gitlab-node-practice
 ```
 
-Each deployment deletes the folder's previous contents first.
-
-The deploy job only copies files. It doesn't start or restart the server, so do that yourself after each deployment. Setting `HOSTNAME` keeps the app reachable only from your own machine:
-
-```powershell
-$env:HOSTNAME = "127.0.0.1"
-node $env:USERPROFILE\deployments\gitlab-node-practice\server.js
-```
+Each deployment deletes the folder's previous contents first, then starts the app at http://localhost:3000. It accepts connections only from that machine.
 
 To confirm which version is running, open http://localhost:3000/api/health and compare `commit` with the commit ID in GitLab.
 
+### How the app keeps running
+
+The deploy job creates a Windows scheduled task named `gitlab-node-practice` for the account running the runner. The task runs the app outside the job, so the app keeps running after the job ends. It also starts the app whenever that account logs on, so it runs only while the account is logged on.
+
+| To do this | Run this in PowerShell |
+|---|---|
+| Check the task | `Get-ScheduledTask gitlab-node-practice` |
+| Start the app | `Start-ScheduledTask gitlab-node-practice` |
+| See the logs | `Get-Content $env:USERPROFILE\deployments\gitlab-node-practice\server.log -Tail 20` (errors are in `server-error.log`) |
+| Remove the task | `Unregister-ScheduledTask gitlab-node-practice` |
+
+The next deployment creates the task again.
+
+If the job fails because port 3000 is in use, stop whatever is using it, such as `npm run dev`, then retry the job.
+
 ### Email in the deployed app
 
-The deployed app doesn't read `.env.local`. To send email from it, set the same settings in the terminal before starting the server:
+The deployed app doesn't read `.env.local`. Add its settings in GitLab under **Settings → CI/CD → Variables**:
 
-```powershell
-$env:SMTP_HOST = "smtp.example.com"
-$env:SMTP_PORT = "587"
-$env:SMTP_USER = "your-username"
-$env:SMTP_PASS = "your-password"
-$env:EMAIL_FROM = "Your Name <you@example.com>"
-```
+| Key | Example | Visibility |
+|---|---|---|
+| `SMTP_HOST` | `smtp.example.com` | Visible |
+| `SMTP_PORT` | `587` | Visible |
+| `SMTP_USER` | `you@example.com` | Masked |
+| `SMTP_PASS` | Your app password, without spaces | Masked |
+| `EMAIL_FROM` | `Your Name <you@example.com>` | Visible |
+
+Keep **Protect variable** selected, which limits the variables to protected branches such as `main`. They take effect on the next deployment, so rerun the `deploy` job after changing them.
+
+The deploy job saves these settings, including the password, as plain text in `smtp-settings.json` in the deployment folder, so only use this on a machine you trust.
