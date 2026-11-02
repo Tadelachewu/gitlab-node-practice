@@ -1,12 +1,18 @@
 {
   "name": "gitlab-node-practice",
   "version": "1.0.0",
-  "description": "Small Node.js app for practicing GitLab CI/CD with a local runner",
+  "description": "Next.js contacts app for practicing GitLab CI/CD with a local runner",
   "private": true,
-  "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
-    "test": "node --test",
-    "build": "node scripts/build.js"
+    "dev": "next dev",
+    "start": "node dist/server.js",
+    "test": "node --test \"test/*.test.mjs\"",
+    "build": "next build && node scripts/build.js"
+  },
+  "dependencies": {
+    "next": "^16.4.3",
+    "nodemailer": "^10.3.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   }
 }

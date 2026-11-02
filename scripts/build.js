@@ -4,8 +4,11 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const dist = path.join(root, 'dist');
 
+// Runs after `next build`. The standalone server doesn't include its static
+// assets, so they have to be copied in next to it.
 fs.rmSync(dist, { recursive: true, force: true });
-fs.cpSync(path.join(root, 'src'), dist, { recursive: true });
+fs.cpSync(path.join(root, '.next', 'standalone'), dist, { recursive: true });
+fs.cpSync(path.join(root, '.next', 'static'), path.join(dist, '.next', 'static'), { recursive: true });
 
 // CI_COMMIT_SHORT_SHA is set by GitLab; it is undefined when building locally.
 const buildInfo = {

@@ -3,6 +3,9 @@ stages:
   - build
   - deploy
 
+variables:
+  NEXT_TELEMETRY_DISABLED: "1"
+
 # Every job must carry this tag, because the runner does not accept untagged jobs.
 default:
   tags:
