@@ -1,0 +1,64 @@
+name: CI/CD
+
+# Keep this repository private: these jobs run on your own machine, so anyone who
+# can change this workflow can run commands there. That is also why there is no
+# pull_request trigger.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+# Windows PowerShell is always installed, unlike the default shell, pwsh.
+defaults:
+  run:
+    shell: powershell
+
+jobs:
+  test:
+    runs-on: [self-hosted, Windows, X64]
+    steps:
+      - uses: actions/checkout@v7
+      - run: node --version
+      - run: npm ci
+      - run: npm test
+
+  build:
+    needs: test
+    runs-on: [self-hosted, Windows, X64]
+    steps:
+      - uses: actions/checkout@v7
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+          # dist/.next is a hidden folder, and the app can't run without it.
+          include-hidden-files: true
+
+  # Only deploys from the default branch. Other branches stop after build.
+  deploy:
+    needs: build
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: [self-hosted, Windows, X64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      # Uses its own folder, task, and port so it doesn't replace the GitLab deployment.
+      - run: .\scripts\deploy.ps1 -Target "$env:USERPROFILE\deployments\github-node-practice" -TaskName github-node-practice -Port 3001
+        env:
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}

@@ -1,6 +1,6 @@
 # gitlab-node-practice
 
-A Next.js contacts app for practicing GitLab CI/CD with a runner on a local Windows machine. You can browse and search sample contacts, then send one of them an email.
+A Next.js contacts app for practicing CI/CD with runners on a local Windows machine, using both [GitLab CI/CD](#how-cicd-works) and [GitHub Actions](#github-actions). You can browse and search sample contacts, then send one of them an email.
 
 ## Run the app
 
@@ -30,7 +30,7 @@ The app shows and searches contacts without any setup, but sending needs an SMTP
 
 The sample contacts use `example.com` addresses, which can't receive mail. To test sending, put your own address on a contact in `src/lib/contacts.mjs`.
 
-`.env.local` is ignored by Git and is used only by `npm run dev`. Never commit it or put your password in `.gitlab-ci.yml`.
+`.env.local` is ignored by Git and is used only by `npm run dev`. Never commit it or put your password in `.gitlab-ci.yml` or a GitHub workflow file.
 
 ## How the app works
 
@@ -58,7 +58,8 @@ The app can only email people in its contact list, but it has no login, so anyon
 | `scripts/build.js` | Assembles `dist/` and writes `build-info.json` |
 | `scripts/deploy.ps1` | Replaces the deployed app, starts it, and checks that it is running |
 | `scripts/start-server.ps1` | Loads the email settings and runs the deployed app |
-| `.gitlab-ci.yml` | Defines the pipeline |
+| `.gitlab-ci.yml` | Defines the GitLab pipeline |
+| `.github/workflows/ci-cd.yml` | Defines the GitHub Actions workflow |
 
 ## How CI/CD works
 
@@ -138,3 +139,55 @@ The deployed app doesn't read `.env.local`. Add its settings in GitLab under **S
 Keep **Protect variable** selected, which limits the variables to protected branches such as `main`. They take effect on the next deployment, so rerun the `deploy` job after changing them.
 
 The deploy job saves these settings, including the password, as plain text in `smtp-settings.json` in the deployment folder, so only use this on a machine you trust.
+
+## GitHub Actions
+
+The sections above describe GitLab. The GitHub Actions workflow runs the same `test`, `build`, and `deploy` jobs, with the same triggers. You can also start it from **Actions → CI/CD → Run workflow**.
+
+The two pipelines run independently, and each deploys its own copy of the app:
+
+| | GitLab | GitHub Actions |
+|---|---|---|
+| App address | http://localhost:3000 | http://localhost:3001 |
+| Deployment folder | `%USERPROFILE%\deployments\gitlab-node-practice` | `%USERPROFILE%\deployments\github-node-practice` |
+| Scheduled task | `gitlab-node-practice` | `github-node-practice` |
+
+The deploy job, health check, scheduled task, and log files work as described above, using the GitHub values.
+
+### Set up the GitHub runner
+
+Keep the GitHub repository private. Jobs run on your own machine, so anyone who can change a workflow can run commands there.
+
+1. On GitHub, open **Settings → Actions → Runners → New self-hosted runner** and select **Windows** and **x64**.
+2. Run the commands GitHub shows, accepting the default labels. They download the runner, configure it, and start it with `run.cmd`.
+
+The runner must be running. Otherwise, jobs stay **queued** until it starts:
+
+```powershell
+cd C:\actions-runner
+.\run.cmd
+```
+
+### Email in the GitHub deployment
+
+Add the settings under **Settings → Secrets and variables → Actions**, then rerun the `deploy` job:
+
+| Name | Example | Tab |
+|---|---|---|
+| `SMTP_HOST` | `smtp.example.com` | Variables |
+| `SMTP_PORT` | `587` | Variables |
+| `EMAIL_FROM` | `Your Name <you@example.com>` | Variables |
+| `SMTP_USER` | `you@example.com` | Secrets |
+| `SMTP_PASS` | Your app password | Secrets |
+
+As with GitLab, the deploy job saves these settings, including the password, as plain text in `smtp-settings.json` in the deployment folder.
+
+### Push to both
+
+The `origin` remote points to GitLab. Add GitHub as a second remote, replacing `<your-username>`, and push to each one:
+
+```powershell
+git remote add github https://github.com/<your-username>/gitlab-node-practice.git
+git push origin main
+git push github main
+```
