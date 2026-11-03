@@ -1,62 +1,28 @@
-# Replaces the deployed app with dist/, starts it, and fails unless the new build is serving.
+# Replaces the running container with a commit's image, and fails unless the new build is serving.
 param(
-  [string]$Target = (Join-Path $env:USERPROFILE 'deployments\gitlab-node-practice'),
-  [string]$TaskName = 'gitlab-node-practice',
-  [int]$Port = 3000
+  [Parameter(Mandatory)][string]$Commit,
+  [Parameter(Mandatory)][string]$ContainerName,
+  [Parameter(Mandatory)][int]$Port
 )
 
 $ErrorActionPreference = 'Stop'
 
-function Stop-DeployedServer {
-  if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-    Stop-ScheduledTask -TaskName $TaskName
-  }
-
-  # Stopping the task can leave node running, and the server may also have been started by hand.
-  $serverPath = Join-Path $Target 'server.js'
-  Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
-    Where-Object { $_.CommandLine -and $_.CommandLine.Contains($serverPath) } |
-    ForEach-Object {
-      Stop-Process -Id $_.ProcessId -Force
-      Wait-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
-    }
+# Docker writes some output to stderr, which must not count as a PowerShell error.
+function Invoke-Docker {
+  $ErrorActionPreference = 'Continue'
+  & docker @args 2>&1 | ForEach-Object { "$_" }
+  if ($LASTEXITCODE) { throw "docker $($args[0]) failed with exit code $LASTEXITCODE." }
 }
 
-function Write-SmtpSettings {
-  $settings = [ordered]@{}
-  foreach ($name in 'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_FROM') {
-    $value = [Environment]::GetEnvironmentVariable($name)
-    if ($value) { $settings[$name] = $value }
-  }
-  $settings | ConvertTo-Json | Set-Content (Join-Path $Target 'smtp-settings.json') -Encoding utf8
-  Write-Output "SMTP settings provided: $($settings.Count) of 5"
-}
-
-# Task Scheduler runs the server outside this job, so it keeps running after the job ends.
-# It also starts the server again whenever this user logs on.
-function Register-ServerTask {
-  $user = "$env:USERDOMAIN\$env:USERNAME"
-  $script = Join-Path $Target 'start-server.ps1'
-  $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`" -Port $Port"
-  $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
-  $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-  # By default, tasks are stopped after 3 days and don't run on battery power.
-  $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
-    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-  Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
-    -Principal $principal -Settings $settings -Force | Out-Null
-}
-
-function Wait-ForCommit($commit) {
+function Wait-ForCommit {
   $url = "http://127.0.0.1:$Port/api/health"
   $deadline = (Get-Date).AddSeconds(30)
 
   while ((Get-Date) -lt $deadline) {
     try {
       $health = Invoke-RestMethod $url -TimeoutSec 2
-      if ($health.commit -eq $commit) {
-        Write-Output "Server is running commit $commit at http://localhost:$Port"
+      if ($health.commit -eq $Commit) {
+        Write-Output "Container $ContainerName is running commit $Commit at http://localhost:$Port"
         return
       }
     } catch {
@@ -65,34 +31,27 @@ function Wait-ForCommit($commit) {
     Start-Sleep -Seconds 1
   }
 
-  foreach ($log in 'server.log', 'server-error.log') {
-    $path = Join-Path $Target $log
-    if (Test-Path $path) {
-      Write-Output "--- $log ---"
-      Get-Content $path -Tail 20
-    }
-  }
-  throw "The server did not report commit $commit at $url within 30 seconds."
+  Invoke-Docker logs --tail 20 $ContainerName
+  throw "The container did not report commit $Commit at $url within 30 seconds."
 }
 
-$dist = Join-Path $PSScriptRoot '..\dist'
+$image = "contacts-app:$Commit"
+Invoke-Docker image inspect $image --format 'Deploying {{.RepoTags}}'
 
-Stop-DeployedServer
+if (Invoke-Docker ps -aq --filter "name=^/$ContainerName$") {
+  Invoke-Docker rm -f $ContainerName | Out-Null
+}
 
 $listener = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($listener) {
   throw "Port $Port is in use by process $($listener.OwningProcess). Stop it, then retry this job."
 }
 
-if (Test-Path $Target) { Remove-Item $Target -Recurse -Force }
-New-Item -ItemType Directory -Path $Target | Out-Null
-Copy-Item (Join-Path $dist '*') $Target -Recurse
-Copy-Item (Join-Path $PSScriptRoot 'start-server.ps1') $Target
-Write-Output "Deployed to $Target"
+# Naming a variable without a value copies it from this job, which keeps it out of the command line.
+$smtpArgs = foreach ($name in 'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_FROM') { '-e'; $name }
 
-Write-SmtpSettings
-Register-ServerTask
-Start-ScheduledTask -TaskName $TaskName
+# The app has no login, so only publish it to this machine.
+Invoke-Docker run -d --name $ContainerName --restart unless-stopped `
+  -p "127.0.0.1:${Port}:3000" @smtpArgs $image | Out-Null
 
-$buildInfo = Get-Content (Join-Path $Target 'build-info.json') -Raw | ConvertFrom-Json
-Wait-ForCommit $buildInfo.commit
+Wait-ForCommit

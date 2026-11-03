@@ -10,9 +10,9 @@ fs.rmSync(dist, { recursive: true, force: true });
 fs.cpSync(path.join(root, '.next', 'standalone'), dist, { recursive: true });
 fs.cpSync(path.join(root, '.next', 'static'), path.join(dist, '.next', 'static'), { recursive: true });
 
-// GitLab and GitHub Actions each set their own variable; neither exists when building locally.
+// BUILD_COMMIT is passed in by the Docker build; it is undefined when building locally.
 const buildInfo = {
-  commit: process.env.CI_COMMIT_SHORT_SHA || process.env.GITHUB_SHA?.slice(0, 7) || 'local',
+  commit: process.env.BUILD_COMMIT || 'local',
   builtAt: new Date().toISOString(),
 };
 fs.writeFileSync(path.join(dist, 'build-info.json'), JSON.stringify(buildInfo, null, 2));

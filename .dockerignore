@@ -1,0 +1,7 @@
+.git
+.github
+.next
+.env*
+dist
+node_modules
+test

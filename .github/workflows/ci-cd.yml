@@ -32,16 +32,7 @@ jobs:
     runs-on: [self-hosted, Windows, X64]
     steps:
       - uses: actions/checkout@v7
-      - run: npm ci
-      - run: npm run build
-      - uses: actions/upload-artifact@v7
-        with:
-          name: dist
-          path: dist/
-          if-no-files-found: error
-          retention-days: 7
-          # dist/.next is a hidden folder, and the app can't run without it.
-          include-hidden-files: true
+      - run: .\scripts\build-image.ps1 -Commit "$($env:GITHUB_SHA.Substring(0,7))"
 
   # Only deploys from the default branch. Other branches stop after build.
   deploy:
@@ -50,12 +41,8 @@ jobs:
     runs-on: [self-hosted, Windows, X64]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          name: dist
-          path: dist
-      # Uses its own folder, task, and port so it doesn't replace the GitLab deployment.
-      - run: .\scripts\deploy.ps1 -Target "$env:USERPROFILE\deployments\github-node-practice" -TaskName github-node-practice -Port 3001
+      # Uses its own container and port so it doesn't replace the GitLab deployment.
+      - run: .\scripts\deploy.ps1 -Commit "$($env:GITHUB_SHA.Substring(0,7))" -ContainerName contacts-app-github -Port 3001
         env:
           SMTP_HOST: ${{ vars.SMTP_HOST }}
           SMTP_PORT: ${{ vars.SMTP_PORT }}
