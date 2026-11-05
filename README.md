@@ -237,6 +237,55 @@ Settings apply when a new container starts. To apply a change right away, remove
 docker rm -f contacts-app-github
 ```
 
+### Test Vault with a self-hosted runner
+
+This optional job reads the email settings from Vault instead of `.env`. It is off by default, and the setup above keeps working either way.
+
+When the `CICD_SELF_HOSTED` repository variable is `true`, `test` and `build` still run on GitHub, and a `deploy-vault` job then runs on your machine. GitHub-hosted runners can't reach a Vault on your machine, and only workflow jobs get a GitHub OIDC token, so a job on your machine is the one place that has both.
+
+The job logs in to Vault at `http://127.0.0.1:8200`, reads `secret/apps/gitlab-node-practice/smtp`, and deploys its own copy of the app:
+
+| | `watch-deploy.ps1` | `deploy-vault` job |
+|---|---|---|
+| App address | http://localhost:3001 | http://localhost:3002 |
+| Container | `contacts-app-github` | `contacts-app-vault` |
+| Contacts volume | `contacts-app-github-data` | `contacts-app-vault-data` |
+| Email settings | `.env` | Vault |
+
+To set it up:
+
+1. Store the five settings in Vault, using these exact names:
+
+   ```powershell
+   vault kv put secret/apps/gitlab-node-practice/smtp `
+     SMTP_HOST="smtp.example.com" `
+     SMTP_PORT="587" `
+     SMTP_USER="you@example.com" `
+     SMTP_PASS="your-app-password" `
+     EMAIL_FROM="Your Name <you@example.com>"
+   ```
+
+2. Allow the job to read them. `bound_claims` must match the capitals in the repository's name on GitHub, because Vault compares it exactly. `bound_audiences` must match `$Audience` in `scripts/deploy-vault.ps1`.
+
+   ```powershell
+   vault policy write github-smtp-read github-smtp-read.hcl
+   vault write auth/jwt/role/github-actions `
+     role_type="jwt" `
+     user_claim="repository" `
+     bound_audiences="https://github.com/tadelachewu" `
+     bound_claims='{"repository":"Tadelachewu/gitlab-node-practice","ref":"refs/heads/main"}' `
+     token_policies="github-smtp-read" `
+     token_ttl="5m"
+   ```
+
+3. On GitHub, open **Settings → Actions → Runners → New self-hosted runner** and select **Windows** and **x64**. Run the commands GitHub shows, accepting the default labels and answering `N` to running as a service, so the job can use your Docker Desktop. Then start the runner with `.\run.cmd`, and keep the window open.
+4. Under **Settings → Secrets and variables → Actions → Variables**, add `CICD_SELF_HOSTED` with the value `true`.
+5. Push to `main`, or use **Run workflow**. The machine must already be logged in with `docker login ghcr.io`.
+
+To confirm it worked, open http://localhost:3002/api/health and compare `commit` with the commit ID on GitHub. To turn it off, delete the variable. If the variable is `true` and the runner isn't running, the workflow waits on `deploy-vault` until the runner starts or GitHub times the job out.
+
+Keep the repository private while this runner is registered, because anyone who can change a workflow could run commands on your machine.
+
 ### Push to both
 
 The `origin` remote points to GitLab, and the `github` remote points to GitHub. Push to each one:
