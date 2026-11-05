@@ -4,7 +4,7 @@
   "description": "Next.js contacts app for practicing GitLab CI/CD with a local runner",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 127.0.0.1",
     "start": "node dist/server.js",
     "test": "node --test \"test/*.test.mjs\"",
     "build": "next build && node scripts/build.js"

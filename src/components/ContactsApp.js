@@ -1,18 +1,23 @@
 'use client';
 
 import { useState } from 'react';
+import ContactForm from './ContactForm';
 import { filterContacts } from '../lib/contacts.mjs';
 
 function initials(name) {
   return name
-    .split(' ')
+    .split(/\s+/)
     .map((part) => part[0])
-    .join('');
+    .join('')
+    .slice(0, 2);
 }
 
-export default function ContactsApp({ contacts }) {
+export default function ContactsApp({ initialContacts }) {
+  const [contacts, setContacts] = useState(initialContacts);
   const [query, setQuery] = useState('');
-  const [selectedId, setSelectedId] = useState(contacts[0].id);
+  const [selectedId, setSelectedId] = useState(initialContacts[0]?.id);
+  // What the right-hand panel shows: 'email', 'add', or 'edit'.
+  const [panel, setPanel] = useState(initialContacts.length ? 'email' : 'add');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -23,7 +28,23 @@ export default function ContactsApp({ contacts }) {
 
   function selectContact(id) {
     setSelectedId(id);
+    setPanel('email');
     setStatus(null);
+  }
+
+  function showForm(form) {
+    setPanel(form);
+    setStatus(null);
+  }
+
+  function handleSaved(saved) {
+    const isNew = !contacts.some((contact) => contact.id === saved.id);
+    setContacts(
+      isNew ? [...contacts, saved] : contacts.map((contact) => (contact.id === saved.id ? saved : contact)),
+    );
+    setSelectedId(saved.id);
+    setPanel('email');
+    setStatus({ type: 'success', text: `${saved.name} ${isNew ? 'added' : 'updated'}.` });
   }
 
   async function handleSubmit(event) {
@@ -56,7 +77,10 @@ export default function ContactsApp({ contacts }) {
   return (
     <main className="app">
       <section className="contacts" aria-label="Contacts">
-        <h1>Contacts</h1>
+        <div className="panel-header">
+          <h1>Contacts</h1>
+          <button type="button" className="secondary" onClick={() => showForm('add')}>Add contact</button>
+        </div>
         <input
           type="search"
           className="search"
@@ -80,7 +104,7 @@ export default function ContactsApp({ contacts }) {
                 <span className="avatar" aria-hidden="true">{initials(contact.name)}</span>
                 <span>
                   <strong>{contact.name}</strong>
-                  <small>{contact.role}, {contact.company}</small>
+                  <small>{[contact.role, contact.company].filter(Boolean).join(', ') || contact.email}</small>
                 </span>
               </button>
             </li>
@@ -88,36 +112,51 @@ export default function ContactsApp({ contacts }) {
         </ul>
       </section>
 
-      <section className="composer" aria-label="Send an email">
-        <h2>Email {selected.name}</h2>
-        <p className="recipient">{selected.email}</p>
+      <section className="composer" aria-label={panel === 'email' ? 'Send an email' : 'Contact details'}>
+        {panel === 'add' && (
+          <ContactForm key="add" onSaved={handleSaved} onCancel={() => showForm(selected ? 'email' : 'add')} />
+        )}
 
-        <form onSubmit={handleSubmit}>
-          <label htmlFor="subject">Subject</label>
-          <input
-            id="subject"
-            required
-            maxLength={200}
-            value={subject}
-            onChange={(event) => setSubject(event.target.value)}
-          />
+        {panel === 'edit' && (
+          <ContactForm key={selected.id} contact={selected} onSaved={handleSaved} onCancel={() => showForm('email')} />
+        )}
 
-          <label htmlFor="message">Message</label>
-          <textarea
-            id="message"
-            required
-            rows={9}
-            maxLength={5000}
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-          />
+        {panel === 'email' && (
+          <>
+            <div className="panel-header">
+              <h2>Email {selected.name}</h2>
+              <button type="button" className="secondary" onClick={() => showForm('edit')}>Edit contact</button>
+            </div>
+            <p className="recipient">{selected.email}</p>
 
-          <button type="submit" className="send" disabled={sending}>
-            {sending ? 'Sending…' : 'Send email'}
-          </button>
-        </form>
+            <form onSubmit={handleSubmit}>
+              <label htmlFor="subject">Subject</label>
+              <input
+                id="subject"
+                required
+                maxLength={200}
+                value={subject}
+                onChange={(event) => setSubject(event.target.value)}
+              />
 
-        {status && (
+              <label htmlFor="message">Message</label>
+              <textarea
+                id="message"
+                required
+                rows={9}
+                maxLength={5000}
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+              />
+
+              <button type="submit" className="send" disabled={sending}>
+                {sending ? 'Sending…' : 'Send email'}
+              </button>
+            </form>
+          </>
+        )}
+
+        {status && panel === 'email' && (
           <p className={`status ${status.type}`} role="status">{status.text}</p>
         )}
       </section>

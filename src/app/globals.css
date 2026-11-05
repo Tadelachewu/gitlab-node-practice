@@ -96,6 +96,39 @@ textarea {
   border-radius: 12px;
 }
 
+.panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.secondary {
+  padding: 0.4rem 0.9rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary:hover {
+  background: var(--accent-soft);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.form-actions .send {
+  margin-top: 0;
+}
+
 .search {
   margin-top: 1rem;
 }

@@ -1,6 +1,6 @@
 # gitlab-node-practice
 
-A Next.js contacts app for practicing CI/CD with both [GitLab CI/CD](#how-cicd-works) and [GitHub Actions](#github-actions). Each pipeline delivers a Docker image that runs as a container on a local Windows machine. You can browse and search sample contacts, then send one of them an email.
+A Next.js contacts app for practicing CI/CD with both [GitLab CI/CD](#how-cicd-works) and [GitHub Actions](#github-actions). Each pipeline delivers a Docker image that runs as a container on a local Windows machine. You can browse, search, add, and edit contacts, then send one of them an email.
 
 ## Run the app
 
@@ -43,25 +43,32 @@ The sample contacts use `example.com` addresses, which can't receive mail. To te
 
 ## How the app works
 
-The contacts page runs in the browser. When you send an email, it posts the contact's ID, the subject, and the message to `/api/send-email`. The server finds that contact's address and sends the email with [Nodemailer](https://nodemailer.com/).
+The contacts page runs in the browser. Select a contact to email them, use **Edit contact** to change their details, or use **Add contact** to create a new one. When you send an email, the page posts the contact's ID, the subject, and the message to `/api/send-email`. The server finds that contact's address and sends the email with [Nodemailer](https://nodemailer.com/).
+
+Contacts start as six samples. The first time you add or edit one, the whole list is saved to `contacts.json` in the folder set by `DATA_DIR`, which defaults to `data/` in the folder the server runs from. With `npm run dev`, that is `data/` in the project folder, which is ignored by Git.
 
 | Route | Purpose |
 |---|---|
 | `/` | The contacts page |
+| `POST /api/contacts` | Adds a contact |
+| `PUT /api/contacts/<id>` | Updates a contact |
 | `POST /api/send-email` | Sends an email to a contact |
 | `GET /api/health` | Returns `{"status":"ok","commit":"<commit ID>"}` |
 
 `commit` shows which commit is running. It is `local` unless the app was built by a pipeline.
 
-The app can only email people in its contact list, but it has no login, so anyone who can reach it can use your email account to send to those contacts. Keep it on your own machine.
+The app has no login. Anyone who can reach it can add any address as a contact and send email to it from your email account, so keep it on your own machine. `npm run dev` and the deployed containers accept connections only from that machine.
 
 | File | Purpose |
 |---|---|
 | `src/app/page.js` | Loads the contacts page |
 | `src/components/ContactsApp.js` | The contact list, search, and email form |
+| `src/components/ContactForm.js` | The form for adding and editing a contact |
+| `src/app/api/contacts/` | Validates and saves added and edited contacts |
 | `src/app/api/send-email/route.js` | Validates a request and sends the email |
 | `src/app/api/health/route.js` | The health check |
-| `src/lib/contacts.mjs` | The sample contacts and search logic |
+| `src/lib/contacts.mjs` | The sample contacts, search logic, and contact validation |
+| `src/lib/contact-store.mjs` | Reads and saves `contacts.json` |
 | `src/lib/email.mjs` | Email validation, SMTP settings, and message building |
 | `test/` | Tests for the code in `src/lib/` |
 | `Dockerfile` | Builds the app and packages it as an image |
@@ -138,6 +145,18 @@ These examples use the GitLab container:
 | Delete an old image | `docker image rm contacts-app:<commit ID>` |
 
 Each commit adds an image, and old images aren't deleted automatically.
+
+### Where contacts are kept
+
+Each container saves its contacts in its own Docker volume, `contacts-app-gitlab-data` or `contacts-app-github-data`, so they survive deployments and restarts. The two deployments don't share contacts.
+
+Removing a container, as in [Email in the GitHub deployment](#email-in-the-github-deployment), keeps its contacts. Deleting the volume with `docker volume rm` permanently deletes them, and the app goes back to the samples.
+
+To save a copy of the GitHub deployment's contacts:
+
+```powershell
+docker cp contacts-app-github:/app/data/contacts.json .\data\contacts-backup.json
+```
 
 If the job fails because the port is in use, stop whatever is using it, such as `npm run dev`, then retry the job.
 

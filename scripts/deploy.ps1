@@ -57,7 +57,8 @@ if ($listener) {
 $smtpArgs = foreach ($name in $settingNames) { '-e'; $name }
 
 # The app has no login, so only publish it to this machine.
+# Contacts are kept in a volume, which outlives the container that this script replaces.
 Invoke-Docker run -d --name $ContainerName --restart unless-stopped `
-  -p "127.0.0.1:${Port}:3000" @smtpArgs $Image | Out-Null
+  -p "127.0.0.1:${Port}:3000" -v "${ContainerName}-data:/app/data" @smtpArgs $Image | Out-Null
 
 Wait-ForCommit

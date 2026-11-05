@@ -1,23 +1,14 @@
 import nodemailer from 'nodemailer';
-import { findContact } from '../../../lib/contacts.mjs';
+import { findContact } from '../../../lib/contact-store.mjs';
 import { buildMessage, getSmtpConfig, validateEmail } from '../../../lib/email.mjs';
+import { readJson } from '../../../lib/read-json.mjs';
 
 export async function POST(request) {
-  // Other websites can't send this content type without a CORS preflight,
-  // which this route doesn't allow, so they can't trigger emails from a browser.
-  if (!request.headers.get('content-type')?.startsWith('application/json')) {
-    return Response.json({ error: 'Send the request as JSON.' }, { status: 415 });
-  }
+  const { body, errorResponse } = await readJson(request);
+  if (errorResponse) return errorResponse;
 
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: 'Send the request as JSON.' }, { status: 400 });
-  }
-
-  // Recipients come from the contact list, so this can't email arbitrary addresses.
-  const contact = findContact(body?.contactId);
+  // Recipients must be in the contact list, not typed into this request.
+  const contact = await findContact(body?.contactId);
   if (!contact) {
     return Response.json({ error: 'Contact not found.' }, { status: 404 });
   }
