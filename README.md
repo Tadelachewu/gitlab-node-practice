@@ -269,14 +269,26 @@ To set it up:
 
    ```powershell
    vault policy write github-smtp-read github-smtp-read.hcl
-   vault write auth/jwt/role/github-actions `
-     role_type="jwt" `
-     user_claim="repository" `
-     bound_audiences="https://github.com/tadelachewu" `
-     bound_claims='{"repository":"Tadelachewu/gitlab-node-practice","ref":"refs/heads/main"}' `
-     token_policies="github-smtp-read" `
-     token_ttl="5m"
+
+   @'
+   {
+     "role_type": "jwt",
+     "user_claim": "repository",
+     "bound_audiences": ["https://github.com/tadelachewu"],
+     "bound_claims": {
+       "repository": "Tadelachewu/gitlab-node-practice",
+       "ref": "refs/heads/main"
+     },
+     "token_policies": ["github-smtp-read"],
+     "token_ttl": "5m"
+   }
+   '@ | Set-Content .\github-actions-role.json -Encoding ascii
+
+   vault write auth/jwt/role/github-actions "@github-actions-role.json"
+   Remove-Item .\github-actions-role.json
    ```
+
+   The role is written from a file because Windows PowerShell can strip the double quotes from JSON passed directly to a command.
 
 3. On GitHub, open **Settings → Actions → Runners → New self-hosted runner** and select **Windows** and **x64**. Run the commands GitHub shows, accepting the default labels and answering `N` to running as a service, so the job can use your Docker Desktop. Then start the runner with `.\run.cmd`, and keep the window open.
 4. Under **Settings → Secrets and variables → Actions → Variables**, add `CICD_SELF_HOSTED` with the value `true`.
