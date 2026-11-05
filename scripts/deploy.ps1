@@ -2,7 +2,8 @@
 param(
   [Parameter(Mandatory)][string]$Commit,
   [Parameter(Mandatory)][string]$ContainerName,
-  [Parameter(Mandatory)][int]$Port
+  [Parameter(Mandatory)][int]$Port,
+  [string]$Image = "contacts-app:$Commit"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,8 +36,7 @@ function Wait-ForCommit {
   throw "The container did not report commit $Commit at $url within 30 seconds."
 }
 
-$image = "contacts-app:$Commit"
-Invoke-Docker image inspect $image --format 'Deploying {{.RepoTags}}'
+Invoke-Docker image inspect $Image --format "Deploying commit $Commit" | Write-Output
 
 if (Invoke-Docker ps -aq --filter "name=^/$ContainerName$") {
   Invoke-Docker rm -f $ContainerName | Out-Null
@@ -52,6 +52,6 @@ $smtpArgs = foreach ($name in 'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS'
 
 # The app has no login, so only publish it to this machine.
 Invoke-Docker run -d --name $ContainerName --restart unless-stopped `
-  -p "127.0.0.1:${Port}:3000" @smtpArgs $image | Out-Null
+  -p "127.0.0.1:${Port}:3000" @smtpArgs $Image | Out-Null
 
 Wait-ForCommit

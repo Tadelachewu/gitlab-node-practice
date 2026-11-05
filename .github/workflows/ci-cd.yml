@@ -1,8 +1,7 @@
 name: CI/CD
 
-# Keep this repository private: these jobs run on your own machine, so anyone who
-# can change this workflow can run commands there. That is also why there is no
-# pull_request trigger.
+# These jobs run on GitHub's servers, which can't reach your machine. Your machine
+# deploys each published image itself, using scripts/watch-deploy.ps1.
 on:
   push:
   workflow_dispatch:
@@ -11,41 +10,41 @@ permissions:
   contents: read
 
 env:
-  NEXT_TELEMETRY_DISABLED: "1"
-
-# Windows PowerShell is always installed, unlike the default shell, pwsh.
-defaults:
-  run:
-    shell: powershell
+  # Must be lowercase, and must match the default in scripts/watch-deploy.ps1.
+  IMAGE: ghcr.io/tadelachewu/gitlab-node-practice
 
 jobs:
   test:
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: node --version
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
       - run: npm ci
       - run: npm test
 
   build:
     needs: test
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v7
-      - run: .\scripts\build-image.ps1 -Commit "$($env:GITHUB_SHA.Substring(0,7))"
-
-  # Only deploys from the default branch. Other branches stop after build.
-  deploy:
-    needs: build
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-    runs-on: [self-hosted, Windows, X64]
-    steps:
-      - uses: actions/checkout@v7
-      # Uses its own container and port so it doesn't replace the GitLab deployment.
-      - run: .\scripts\deploy.ps1 -Commit "$($env:GITHUB_SHA.Substring(0,7))" -ContainerName contacts-app-github -Port 3001
+      - name: Build image
+        run: >
+          docker build
+          -t "$IMAGE:${GITHUB_SHA::7}"
+          -t "$IMAGE:main"
+          --build-arg "BUILD_COMMIT=${GITHUB_SHA::7}"
+          --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY"
+          .
+      # Only the default branch publishes, so other branches never get deployed.
+      - name: Publish image
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         env:
-          SMTP_HOST: ${{ vars.SMTP_HOST }}
-          SMTP_PORT: ${{ vars.SMTP_PORT }}
-          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push --all-tags "$IMAGE"

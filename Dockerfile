@@ -10,6 +10,8 @@ ARG BUILD_COMMIT=local
 RUN npm run build
 
 FROM node:24-alpine
+ARG BUILD_COMMIT=local
+LABEL org.opencontainers.image.revision=$BUILD_COMMIT
 WORKDIR /app
 # Docker sets HOSTNAME to the container ID, so the server has to be told to listen on all interfaces.
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000

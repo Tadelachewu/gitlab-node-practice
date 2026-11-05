@@ -1,6 +1,6 @@
 # gitlab-node-practice
 
-A Next.js contacts app for practicing CI/CD with runners on a local Windows machine, using both [GitLab CI/CD](#how-cicd-works) and [GitHub Actions](#github-actions). Each pipeline builds a Docker image and runs it as a container on that machine. You can browse and search sample contacts, then send one of them an email.
+A Next.js contacts app for practicing CI/CD with both [GitLab CI/CD](#how-cicd-works) and [GitHub Actions](#github-actions). Each pipeline delivers a Docker image that runs as a container on a local Windows machine. You can browse and search sample contacts, then send one of them an email.
 
 ## Run the app
 
@@ -68,6 +68,7 @@ The app can only email people in its contact list, but it has no login, so anyon
 | `scripts/build.js` | Assembles `dist/` and writes `build-info.json` |
 | `scripts/build-image.ps1` | Builds the Docker image for a commit |
 | `scripts/deploy.ps1` | Replaces the running container and checks that the new one is serving |
+| `scripts/watch-deploy.ps1` | Deploys each new image that GitHub Actions publishes |
 | `.gitlab-ci.yml` | Defines the GitLab pipeline |
 | `.github/workflows/ci-cd.yml` | Defines the GitHub Actions workflow |
 
@@ -110,7 +111,7 @@ Jobs run on a GitLab Runner on your own machine, using the `local-windows` tag a
 
 ## Where it is deployed
 
-The app runs as a container in the Docker on the machine running the runner:
+The app runs as a container in the local machine's Docker:
 
 | | GitLab | GitHub Actions |
 |---|---|---|
@@ -142,7 +143,7 @@ If the job fails because the port is in use, stop whatever is using it, such as 
 
 ### Email in the deployed app
 
-The container doesn't read `.env` or `.env.local`. Add its settings in GitLab under **Settings → CI/CD → Variables**:
+The GitLab container doesn't read `.env` or `.env.local`. Add its settings in GitLab under **Settings → CI/CD → Variables**:
 
 | Key | Example | Visibility |
 |---|---|---|
@@ -158,37 +159,58 @@ The settings aren't stored in the image, but anyone who can use this machine's D
 
 ## GitHub Actions
 
-The sections above describe GitLab. The GitHub Actions workflow runs the same `test`, `build`, and `deploy` jobs, with the same triggers. You can also start it from **Actions → CI/CD → Run workflow**.
+The workflow runs on GitHub-hosted runners, so no runner is needed on your machine. Those runners can't connect to your machine, so your machine fetches each new image itself:
 
-The two pipelines run independently, and each deploys its own container, as shown in [Where it is deployed](#where-it-is-deployed).
+1. **`test`** runs on GitHub, on every push, and runs `npm ci` and `npm test`.
+2. **`build`** runs on GitHub, if `test` passes, and builds the Docker image. On `main`, it also publishes the image to the GitHub Container Registry as `ghcr.io/tadelachewu/gitlab-node-practice`.
+3. **`scripts/watch-deploy.ps1`** runs on your machine and checks the registry every minute. When there is a new image, it replaces the `contacts-app-github` container and checks that the new commit is serving. If it isn't, the script goes back to the previous image and doesn't retry that image.
 
-### Set up the GitHub runner
+A green workflow means the image was published, not that it was deployed. To confirm a deployment, check `watch-deploy.log` in the project folder, or open http://localhost:3001/api/health and compare `commit` with the commit ID on GitHub.
 
-Keep the GitHub repository private. Jobs run on your own machine, so anyone who can change a workflow can run commands there.
+The script only deploys while it and Docker Desktop are running. If either is stopped, it deploys the latest image once both are running again.
 
-1. On GitHub, open **Settings → Actions → Runners → New self-hosted runner** and select **Windows** and **x64**.
-2. Run the commands GitHub shows, accepting the default labels. They download the runner, configure it, and start it with `run.cmd`.
+You can also start the workflow from **Actions → CI/CD → Run workflow**.
 
-The runner must be running. Otherwise, jobs stay **queued** until it starts:
+### Set up your machine
+
+Do this once:
+
+1. On GitHub, open **Settings → Developer settings → Personal access tokens → Tokens (classic)** and create a token with only the `read:packages` scope.
+2. Log in to the registry, and paste the token when asked for a password:
+
+   ```powershell
+   docker login ghcr.io -u <your-github-username>
+   ```
+
+3. Put the email settings in `.env` in the project folder. See `.env.example` for the names.
+4. Start the script from the project folder, and keep the window open:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\watch-deploy.ps1
+   ```
+
+The script and `.env` run from your local copy of the project. Pushing to GitHub doesn't update them, so run `git pull` and restart the script if `scripts/` changes.
+
+### Start the script automatically
+
+To start the script whenever you log on, run this from the project folder instead of step 4, then log off and on again:
 
 ```powershell
-cd C:\actions-runner
-.\run.cmd
+$action = New-ScheduledTaskAction -Execute powershell.exe -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PWD\scripts\watch-deploy.ps1`""
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName contacts-app-watch-deploy -Action $action -Trigger $trigger -Settings $settings
 ```
 
-Docker Desktop must be running too.
+To remove it, run `Unregister-ScheduledTask contacts-app-watch-deploy`.
 
 ### Email in the GitHub deployment
 
-Add the settings under **Settings → Secrets and variables → Actions**, then rerun the `deploy` job:
+The container gets its email settings from `.env` on your machine, not from GitHub, so GitHub never holds your password. They apply when a new container starts. To apply a change right away, remove the container, and the script creates it again within a minute:
 
-| Name | Example | Tab |
-|---|---|---|
-| `SMTP_HOST` | `smtp.example.com` | Variables |
-| `SMTP_PORT` | `587` | Variables |
-| `EMAIL_FROM` | `Your Name <you@example.com>` | Variables |
-| `SMTP_USER` | `you@example.com` | Secrets |
-| `SMTP_PASS` | Your app password | Secrets |
+```powershell
+docker rm -f contacts-app-github
+```
 
 ### Push to both
 
