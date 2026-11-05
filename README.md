@@ -306,3 +306,6 @@ The `origin` remote points to GitLab, and the `github` remote points to GitHub. 
 git push origin main
 git push github main
 ```
+
+
+amazing cicd
