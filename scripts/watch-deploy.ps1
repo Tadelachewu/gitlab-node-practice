@@ -42,18 +42,23 @@ function Get-RunningImageId {
   }
 }
 
-# Read on every deployment, so a changed .env applies to the next container.
+# Read on every deployment, so a changed .env applies to the next container. Throwing here
+# leaves the running container alone and tries again next time, so fixing .env is enough.
 function Import-SmtpSettings {
-  if (-not (Test-Path $EnvFile)) {
-    Write-Log "No settings file at $EnvFile, so the app won't be able to send email."
-    return
-  }
+  $names = 'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_FROM'
+  foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
+
+  if (-not (Test-Path $EnvFile)) { throw "No settings file at $EnvFile. Nothing was deployed." }
+
   foreach ($line in Get-Content $EnvFile) {
     if ($line -match '^\s*(SMTP_HOST|SMTP_PORT|SMTP_USER|SMTP_PASS|EMAIL_FROM)\s*=\s*(.*?)\s*$') {
       $value = $Matches[2] -replace '^(["''])(.*)\1$', '$2'
       [Environment]::SetEnvironmentVariable($Matches[1], $value, 'Process')
     }
   }
+
+  $missing = $names | Where-Object { -not [Environment]::GetEnvironmentVariable($_) }
+  if ($missing) { throw "Missing from ${EnvFile}: $($missing -join ', '). Nothing was deployed." }
 }
 
 function Deploy-Image($reference) {

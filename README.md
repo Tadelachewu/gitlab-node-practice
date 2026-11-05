@@ -31,7 +31,7 @@ docker run --rm -p 127.0.0.1:3000:3000 contacts-app:local
 
 ## Set up email
 
-The app shows and searches contacts without any setup, but sending needs an SMTP account from an email provider. Until it is set up, the form shows "Email is not set up yet".
+The app needs an SMTP account from an email provider to send email. With `npm run dev`, it still shows and searches contacts without one, and the form shows "Email is not set up yet". Deployments require all five settings and stop if any are missing.
 
 1. Copy `.env.example` to `.env.local`.
 2. Fill in your provider's SMTP details. Many providers, such as Gmail, require an app password rather than your normal password.
@@ -153,6 +153,8 @@ The GitLab container doesn't read `.env` or `.env.local`. Add its settings in Gi
 | `SMTP_PASS` | Your app password, without spaces | Masked |
 | `EMAIL_FROM` | `Your Name <you@example.com>` | Visible |
 
+All five are required. If any are missing, the `deploy` job fails with their names and leaves the running container alone.
+
 Keep **Protect variable** selected, which limits the variables to protected branches such as `main`. They take effect on the next deployment, so rerun the `deploy` job after changing them.
 
 The settings aren't stored in the image, but anyone who can use this machine's Docker can read them with `docker inspect`, so only use this on a machine you trust.
@@ -182,7 +184,7 @@ Do this once:
    docker login ghcr.io -u <your-github-username>
    ```
 
-3. Put the email settings in `.env` in the project folder. See `.env.example` for the names.
+3. Put the email settings in `.env` in the project folder, with no `#` in front of them. See `.env.example` for the names. All five are required.
 4. Start the script from the project folder, and keep the window open:
 
    ```powershell
@@ -206,7 +208,11 @@ To remove it, run `Unregister-ScheduledTask contacts-app-watch-deploy`.
 
 ### Email in the GitHub deployment
 
-The container gets its email settings from `.env` on your machine, not from GitHub, so GitHub never holds your password. They apply when a new container starts. To apply a change right away, remove the container, and the script creates it again within a minute:
+The container gets its email settings from `.env` on your machine, not from GitHub, so GitHub never holds your password. `.env` is never copied into the image.
+
+If `.env` or any setting is missing, the script logs which ones, leaves the running container alone, and checks again every minute, so it deploys once you fix the file.
+
+Settings apply when a new container starts. To apply a change right away, remove the container, and the script creates it again within a minute:
 
 ```powershell
 docker rm -f contacts-app-github

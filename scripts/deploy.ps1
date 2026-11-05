@@ -36,6 +36,12 @@ function Wait-ForCommit {
   throw "The container did not report commit $Commit at $url within 30 seconds."
 }
 
+$settingNames = 'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_FROM'
+
+# Checked before the running container is removed, so a missing setting doesn't take the app down.
+$missing = $settingNames | Where-Object { -not [Environment]::GetEnvironmentVariable($_) }
+if ($missing) { throw "Missing settings: $($missing -join ', '). Nothing was deployed." }
+
 Invoke-Docker image inspect $Image --format "Deploying commit $Commit" | Write-Output
 
 if (Invoke-Docker ps -aq --filter "name=^/$ContainerName$") {
@@ -48,7 +54,7 @@ if ($listener) {
 }
 
 # Naming a variable without a value copies it from this job, which keeps it out of the command line.
-$smtpArgs = foreach ($name in 'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_FROM') { '-e'; $name }
+$smtpArgs = foreach ($name in $settingNames) { '-e'; $name }
 
 # The app has no login, so only publish it to this machine.
 Invoke-Docker run -d --name $ContainerName --restart unless-stopped `
